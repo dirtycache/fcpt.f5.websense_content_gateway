@@ -1,0 +1,784 @@
+cli admin-partitions {
+    update-partition Common
+}
+sys application template /Common/f5.websense_content_gateway {
+    actions {
+        definition {
+            html-help {
+                <p><b>Websense Content Gateway Assistant</b></p>
+<p>This template creates a complete
+  configuration optimized for Websense Web Security Gateway solutions.
+  Before you start: </p>
+<ul>
+  <li>Check System :: Resource Provisioning to ensure that LTM (local traffic manager) is
+    provisioned.</li>
+  <li>Setup Websense applicances.</li>
+  <li>Set up VLANs to the servers containing the applications your clients will access.</li>
+</ul>
+<p><b>Explicit Proxy</b></p>
+<p>Configure the virtual server for explicit proxy mode.</p>
+<ul>
+  <li>Type the IP address and ports for the virtual servers that the BIG-IP system uses for the Websense
+    Content Gateway proxy. When you click <b>Finished</b>, the system creates virtual
+    servers named <b>&lt;prefix&gt;_explicit_http_virtual, _explicit_https_virtual, 
+    and _explicit_ftp_virtual</b>, and associates those virtual
+    servers with this IP address.</li>
+  <li>Specify whether the servers can communicate with clients using a route through the
+    BIG-IP system to deliver response data, or whether the BIG-IP system should
+    translate the client's source address if needed to deliver response data.
+    Selecting <b>No</b> causes the BIG-IP system to specify the <b>Auto
+      Map</b> setting for the <b>SNAT Pool</b> option on the associated virtual
+    server. In this case, the servers send response data to the BIG-IP system, which then
+    translates the destination address and delivers response data to the client.</li>
+  <li>If you have more than 64,000 simultaneous connections, you must specify at least one IP
+    address to the secure network address translation (SNAT) pool for every 64,000 connections
+    (or fraction thereof). If you do not, after 64,000 connections, new requests fail. If you
+    select <b>No</b>, the system uses the self-IP to automatically map to the IP
+    address for the SNAT pool (SNAT automap).</li>
+</ul>
+
+<p><b>Transparent Proxy</b></p>
+<p>Configure the virtual server for transparent proxy.</p>
+<ul>
+  <li>Specify the ports that should be intercepted and delivered to Websense as a transparent
+    proxy.</li>
+  <li>When you click <b>Finished</b>, the system creates virtual
+    servers named <b>&lt;prefix&gt;_transparent_http_virtual and _transparent_https_virtual</b>.</li>
+  <li>Specify whether the servers can communicate with clients using a route through the
+    BIG-IP system to deliver response data, or whether the BIG-IP system should
+    translate the client's source address if needed to deliver response data.
+    Selecting <b>No</b> causes the BIG-IP system to specify the <b>Auto
+      Map</b> setting for the <b>SNAT Pool</b> option on the associated virtual
+    server. In this case, the servers send response data to the BIG-IP system, which then
+    translates the destination address and delivers response data to the client.</li>
+  <li>If you have more than 64,000 simultaneous connections, you must specify at least one IP
+    address to the secure network address translation (SNAT) pool for every 64,000 connections
+    (or fraction thereof). If you do not, after 64,000 connections, new requests fail. If you
+    select <b>No</b>, the system uses the self-IP to automatically map to the IP
+    address for the SNAT pool (SNAT automap).</li>
+  <li>Specify if you are using Kerberos proxy authentication.  Kerberos proxy authentication can
+    be enabled for either transparent or explicit proxy mode, but not both concurrently.  Kerberos
+    proxy authentication in transparent mode requires that the clients be able to access the
+    proxy servers directly by name.  If you need virtual servers setup to enable this access, select
+    <b>Yes</b></li>
+</ul>
+
+
+<p><b>Server Pool, Load Balancing, and Service Monitor</b></p>
+<ul>
+  <li>Select the type of load balancing to use, and specify the servers referred to by the
+    virtual server the template creates. Until you specify at least one server here, the virtual
+    server is not available.  <b>Predictive (node)</b> is the suggested load balancing
+    method.</li>
+  <li>If applicable, enable TCP request queuing, and specify a queue length and timeout for
+    queued requests. A 0 (zero) value indicates unlimited.</li>
+  <li>Select a health monitor applicable to the version of Websense Content Gateway software.  Select Websense 7.7.3+ for Websense 7.8.</li>
+</ul>
+<p><b>Protocol Optimization and Security Questions</b></p>
+<p>Specify whether clients are connecting over the LAN or WAN.  </p>
+<p><b>Finalize, View, and Change</b></p>
+<p>Check over your settings and
+  selections. Click <b>Cancel</b> to abandon all settings and return to the Application Services List
+  screen. Click <b>Repeat</b> to create application objects and begin another application using the
+  same settings (except Name). Click <b>Finished</b> to create application objects and go to the
+  application's properties screen. Once the application generates, you can see its constituent
+  elements by clicking the application's name in the Application Services List screen and
+  clicking the Components tab. You can modify the application by selecting the application's
+  name in the Application Services list and clicking the Reconfigure tab.</p>
+            }
+            implementation {
+                tmsh::log_dest file
+tmsh::log_level crit
+
+tmsh::include "f5.app_utils"
+
+# Version 2
+# Copyright 2013-2014 Websense, Inc.  All Rights Reserved.
+
+# constants
+set NO_ANSWER "No"
+set YES_ANSWER "Yes"
+set WAN_OPTION "WAN"
+set EMPTY_STRING "EMPTY_STRING_NO_VALUE_PRESENT"
+set CREATE_NEW_POOL_OPTION "Create New Pool"
+set CREATE_NEW_MONITOR_OPTION "Create Custom Monitor"
+set CREATE_NEW_MONITOR_WEBSENSE77 "Websense 7.7"
+set CREATE_NEW_MONITOR_WEBSENSE773 "Websense 7.7.3+"
+set CONNECTION_LIMIT_FIELD "connection_limit"
+set ADDR_FIELD "addr"
+set PORT_FIELD "port"
+set RATIO_FIELD "ratio"
+set HOST_FIELD "host"
+set ONE_SPACE " "
+set HTTP_11_VERSION_STRING "\"Version 1.1\""
+set ALL_VLAN_ANSWER "All VLANs"
+set ENABLED_ON_ANSWER "Enabled on ..."
+set DIABLED_ON_ANSWER "Disabled on ..."
+
+
+proc tmsh_create { component arguments } {
+    regsub -all {\"} $arguments "\\\"" arguments
+    regsub -all {\[} $arguments "\\\[" arguments
+    regsub -all {\]} $arguments "\\\]" arguments
+    tmsh::run_proc f5.app_utils:do_tmsh_create "\"$component\"" "\"$arguments\""
+}
+
+proc tmsh_modify { component arguments } {
+    regsub -all {\"} $arguments "\\\"" arguments
+    regsub -all {\[} $arguments "\\\[" arguments
+    regsub -all {\]} $arguments "\\\]" arguments
+    tmsh::run_proc f5.app_utils:do_tmsh_modify "\"$component\"" "\"$arguments\""
+}
+
+# Modified version of create_vs to support transparent virtual Servers
+proc create_wbsn_vs { 
+        name_prefix         
+        destination 
+        snat 
+        pool_name 
+        profile_names 
+        persist_profile 
+        tcp_server_profile_name 
+        tcp_client_profile_name
+        vlan_action
+	transparent_vs } {
+
+    set vs_name [format "%s_%s" $name_prefix virtual]
+
+    set snat_action "source-address-translation \{ type none \}"
+    if { $snat != $::EMPTY_STRING } {
+        if { $snat == "none" } {
+            set snat_action "source-address-translation \{ type none \} "
+        } elseif { $snat == "automap" } {
+            set snat_action "source-address-translation \{ type automap \} "
+        } else {
+            set snat_action "source-address-translation \{ type snat pool $snat \} "
+        }
+    }
+
+    if { $pool_name == $::EMPTY_STRING } {
+        set pool_action "pool none"
+    } else {
+        set pool_action [format "pool %s" $pool_name]
+    }
+
+    if { $persist_profile == $::EMPTY_STRING } {
+        set pesist_action "persist none"
+    } else {
+        set pesist_action "persist replace-all-with \{ $persist_profile \}"
+    }
+
+    if { $transparent_vs == $::YES_ANSWER} {
+        if { [tmsh::run_proc f5.app_utils:is_ipv6 $destination] == $::YES_ANSWER } {
+            set mask_action "mask 0000:0000:0000:0000:0000:0000:0000:0000"
+        } else {
+            set mask_action "mask 0.0.0.0"
+        }
+    } else {
+        if { [tmsh::run_proc f5.app_utils:is_ipv6 $destination] == $::YES_ANSWER } {
+            set mask_action "mask ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"
+        } else {
+            set mask_action "mask 255.255.255.255"
+        }
+    }
+
+
+    tmsh_create "/ ltm virtual" "$vs_name destination $destination $snat_action $mask_action $pool_action profiles none $pesist_action rules none"
+
+    if { $profile_names != $::EMPTY_STRING } {
+        tmsh_modify "/ ltm virtual" "$vs_name profiles replace-all-with $profile_names"
+    }
+
+    if { $vlan_action != $::EMPTY_STRING } {
+        tmsh_modify "/ ltm virtual" "$vs_name $vlan_action"
+    }
+
+    if { $tcp_server_profile_name == $tcp_client_profile_name } {
+        tmsh_modify "/ ltm virtual" "$vs_name profiles add \{ $tcp_server_profile_name \{ context all \} \}"
+    } else {
+        tmsh_modify "/ ltm virtual" "$vs_name profiles add \{ $tcp_server_profile_name \{ context serverside \} \}"
+        tmsh_modify "/ ltm virtual" "$vs_name profiles add \{ $tcp_client_profile_name \{ context clientside \} \}"
+    }
+
+    return $vs_name
+}
+
+proc configure_websense_deployment {} {
+    # create web profiles
+    set http_optimization_profile_names [tmsh::run_proc \
+        f5.app_utils:create_http_comp_accel_profiles $tmsh::app_name \
+        $::optimizations__lan_or_wan $::NO_ANSWER $::NO_ANSWER $::EMPTY_STRING \
+        $::NO_ANSWER ]
+
+    set http_profile_names \{
+    append http_profile_names $http_optimization_profile_names
+    append http_profile_names \}
+
+    set https_profile_names $::EMPTY_STRING
+
+    set ftp_profile_names $::EMPTY_STRING
+
+    tmsh_modify "/ ltm profile http" "${tmsh::app_name}_http_profile insert-xforwarded-for enabled"
+
+
+        # create monitor
+        if { $::server_pools__create_new_monitor == $::CREATE_NEW_MONITOR_OPTION} {
+            set monitor_interval $::server_pools__monitor_interval
+            set monitor_recv \"$::server_pools__monitor_recv\"
+            set monitor_send \"$::server_pools__monitor_send\"
+            set http_version \"$::server_pools__monitor_http_version\"
+            set monitor_type http
+
+            if { $http_version == $::HTTP_11_VERSION_STRING } {
+                set monitor_dns_name $::server_pools__monitor_dns_name
+            }
+            else {
+                set monitor_dns_name $::EMPTY_STRING
+            }
+
+            set monitor_name [tmsh::run_proc f5.app_utils:create_monitor \
+                $tmsh::app_name $monitor_type $monitor_interval "$monitor_send" \
+                "$monitor_recv" "$http_version" $monitor_dns_name]
+
+        } elseif { $::server_pools__create_new_monitor == $::CREATE_NEW_MONITOR_WEBSENSE77 } {
+            set monitor_interval $::server_pools__monitor_interval
+            set monitor_recv "\"abcdefghijklmnopqrstuvwxyz\""
+            set monitor_send "\"GET http://127.0.0.1:8083/synthetic.txt HTTP/1.0\r\n\r\n\""
+            set http_version "\"Version 1.0\""
+            set monitor_type http
+            set monitor_dns_name $::EMPTY_STRING
+
+            set monitor_name [tmsh::run_proc f5.app_utils:create_monitor \
+                $tmsh::app_name $monitor_type $monitor_interval "$monitor_send" \
+                "$monitor_recv" "$http_version" $monitor_dns_name]
+
+        } elseif { $::server_pools__create_new_monitor == $::CREATE_NEW_MONITOR_WEBSENSE773 } {
+            set monitor_interval $::server_pools__monitor_interval
+            set monitor_recv "\".*WSUP$\""
+            set monitor_send "\"GET http://127.0.0.1:8083/health.app.filtering HTTP/1.0\r\n\r\n\""
+            set http_version "\"Version 1.0\""
+            set monitor_type http
+            set monitor_dns_name $::EMPTY_STRING
+
+            set monitor_name [tmsh::run_proc f5.app_utils:create_monitor \
+                $tmsh::app_name $monitor_type $monitor_interval "$monitor_send" \
+                "$monitor_recv" "$http_version" $monitor_dns_name]
+
+        } else {
+            set monitor_name $::server_pools__reuse_monitor_name
+        }
+        # end create monitor
+
+        # Setup connection queuing 
+        set do_queuing $::server_pools__tcp_request_queuing_enable_question
+        if { $do_queuing == $::YES_ANSWER } {
+            set queue_length $::server_pools__tcp_request_queue_length
+            set time_limit $::server_pools__tcp_request_queue_timeout
+        } else {
+            set queue_length 0
+            set time_limit 0
+        }
+
+        # create pool
+        set servers $::server_pools__servers
+        set lb_method $::server_pools__lb_method_choice
+   if { $::explicit__explicit == $::YES_ANSWER } {
+        # Create pool for http
+        set ::PORT_FIELD "port"
+        set pool_name_explicit_http [tmsh::run_proc f5.app_utils:create_pool \
+            ${tmsh::app_name}_explicit_http $monitor_name "\{$servers\}" $lb_method ]
+        tmsh::run_proc f5.app_utils:do_tcp_request_queue_settings \
+            $pool_name_explicit_http $do_queuing $queue_length $time_limit
+
+        set ::PORT_FIELD "sslport"
+        set pool_name_explicit_https [tmsh::run_proc f5.app_utils:create_pool \
+            ${tmsh::app_name}_explicit_https $monitor_name "\{$servers\}" $lb_method ]
+        tmsh::run_proc f5.app_utils:do_tcp_request_queue_settings \
+            $pool_name_explicit_https $do_queuing $queue_length $time_limit
+
+        set ::PORT_FIELD "ftpport"
+        set pool_name_explicit_ftp [tmsh::run_proc f5.app_utils:create_pool \
+            ${tmsh::app_name}_explicit_ftp tcp "\{$servers\}" $lb_method ]
+        tmsh::run_proc f5.app_utils:do_tcp_request_queue_settings \
+            $pool_name_explicit_ftp $do_queuing $queue_length $time_limit
+  }
+ 
+  if { $::transparent__transparent == $::YES_ANSWER } {
+
+        set ::PORT_FIELD "port"
+        set pool_name_transparent_http [tmsh::run_proc f5.app_utils:create_pool_with_port_override \
+            ${tmsh::app_name}_transparent_http $monitor_name "\{$servers\}" $lb_method $::transparent__port ]
+        tmsh::run_proc f5.app_utils:do_tcp_request_queue_settings \
+            $pool_name_transparent_http $do_queuing $queue_length $time_limit
+
+        set pool_name_transparent_https [tmsh::run_proc f5.app_utils:create_pool_with_port_override \
+            ${tmsh::app_name}_transparent_https tcp "\{$servers\}" $lb_method $::transparent__sslport ]
+        tmsh::run_proc f5.app_utils:do_tcp_request_queue_settings \
+            $pool_name_transparent_https $do_queuing $queue_length $time_limit
+       }
+
+        # end create pool
+
+    # create TCP profiles
+    set tcp_profile_name_lan [format "%s_%s" $tmsh::app_name lan-optimized_tcp_profile]
+    tmsh_create "/ ltm profile tcp" "$tcp_profile_name_lan defaults-from tcp-lan-optimized"
+
+    set tcp_server_profile_name $tcp_profile_name_lan
+
+    if { $::optimizations__lan_or_wan == $::WAN_OPTION } {
+        set tcp_profile_name_wan [format "%s_%s" $tmsh::app_name wan-optimized_tcp_profile]
+        tmsh_create "/ ltm profile tcp" "$tcp_profile_name_wan defaults-from tcp-wan-optimized"
+
+        set tcp_client_profile_name $tcp_profile_name_wan
+    } else {
+        set tcp_client_profile_name $tcp_profile_name_lan
+    }
+
+    # create persist profile
+    set persist_profile [format "%s_%s" $tmsh::app_name persistence_profile]
+    set persist_profile_attr \{ 
+    append persist_profile_attr "defaults-from source_addr "
+    append persist_profile_attr "match-across-pools disabled "
+    append persist_profile_attr "match-across-services enabled "
+    append persist_profile_attr "match-across-virtuals disabled "
+    append persist_profile_attr \}
+    tmsh_create "/ ltm persistence source-addr" "$persist_profile $persist_profile_attr"
+
+
+    # Explicit Proxy setup
+    if { $::explicit__explicit == $::YES_ANSWER } {
+
+        # SNAT
+        if { $::explicit__snat == $::NO_ANSWER } {
+            set explicit_snat "automap"
+            set explicit_using_snat $::YES_ANSWER
+
+            if { $::explicit__need_snatpool == $::YES_ANSWER } {
+                set members \{
+                foreach member $::explicit__snatpool_members {
+                    append members [tmsh::get_field_value $member addr]
+                    append members " "
+                }
+                append members \}
+
+                set explicit_snat [format "%s_explicit_snatpool" $tmsh::app_name ]
+                tmsh_create "/ ltm snatpool" "$explicit_snat members replace-all-with $members"
+                }
+        } else {
+            set explicit_snat "none"
+            set explicit_using_snat $::NO_ANSWER
+        }
+
+        # VLAN Enabled / Disabled
+        set evs_vlan_enable_disable $::explicit__evs_vlan_listening
+        if { $evs_vlan_enable_disable != $::ALL_VLAN_ANSWER } {
+            if { $evs_vlan_enable_disable == $::ENABLED_ON_ANSWER } {
+                set evs_vlan_action "vlans-enabled vlans "
+            } else {
+                set evs_vlan_action "vlans-disabled vlans "
+            }
+            if { [info exists ::explicit__evs_vlan_selections] } {
+                append evs_vlan_action "replace-all-with \{"
+                append evs_vlan_action $::explicit__evs_vlan_selections
+                append evs_vlan_action \}
+            } else {
+                append evs_vlan_action "none"
+            }
+        } else {
+            set evs_vlan_action $::EMPTY_STRING
+        }
+
+        # create VS(s)
+        set destination [tmsh::run_proc f5.app_utils:create_destination $::explicit__addr $::explicit__port]
+        set ssldestination [tmsh::run_proc f5.app_utils:create_destination $::explicit__addr $::explicit__sslport]
+        set ftpdestination [tmsh::run_proc f5.app_utils:create_destination $::explicit__addr $::explicit__ftpport]
+
+        create_wbsn_vs ${tmsh::app_name}_explicit_http \
+            $destination $explicit_snat $pool_name_explicit_http $http_profile_names $persist_profile \
+            $tcp_server_profile_name $tcp_client_profile_name $evs_vlan_action $::NO_ANSWER
+        create_wbsn_vs ${tmsh::app_name}_explicit_https \
+            $ssldestination $explicit_snat $pool_name_explicit_https $https_profile_names $persist_profile \
+            $tcp_server_profile_name $tcp_client_profile_name $evs_vlan_action $::NO_ANSWER
+        create_wbsn_vs ${tmsh::app_name}_explicit_ftp \
+            $ftpdestination $explicit_snat $pool_name_explicit_ftp $ftp_profile_names $persist_profile \
+            $tcp_server_profile_name $tcp_client_profile_name $evs_vlan_action $::NO_ANSWER
+    }
+
+    # Transparent Proxy setup
+    if { $::transparent__transparent == $::YES_ANSWER } {
+
+        # SNAT
+        if { $::transparent__snat == $::NO_ANSWER } {
+            set transparent_snat "automap"
+            set transparent_using_snat $::YES_ANSWER
+
+            if { $::transparent__need_snatpool == $::YES_ANSWER } {
+                set members \{
+                foreach member $::transparent__snatpool_members {
+                    append members [tmsh::get_field_value $member addr]
+                    append members " "
+                }
+                append members \}
+
+                set transparent_snat [format "%s_transparent_snatpool" $tmsh::app_name ]
+                tmsh_create "/ ltm snatpool" "$transparent_snat members replace-all-with $members"
+                }
+        } else {
+            set transparent_snat "none"
+            set transparent_using_snat $::NO_ANSWER
+        }
+
+        # VLAN Enabled / Disabled
+        set tvs_vlan_enable_disable $::transparent__tvs_vlan_listening
+        if { $tvs_vlan_enable_disable != $::ALL_VLAN_ANSWER } {
+            if { $tvs_vlan_enable_disable == $::ENABLED_ON_ANSWER } {
+                set tvs_vlan_action "vlans-enabled vlans "
+            } else {
+                set tvs_vlan_action "vlans-disabled vlans "
+            }
+            if { [info exists ::transparent__tvs_vlan_selections] } {
+                append tvs_vlan_action "replace-all-with \{"
+                append tvs_vlan_action $::transparent__tvs_vlan_selections
+                append tvs_vlan_action \}
+            } else {
+                append tvs_vlan_action "none"
+            }
+        } else {
+            set tvs_vlan_action $::EMPTY_STRING
+        }
+
+        set transparent_vsaddr [tmsh::run_proc f5.app_utils:create_destination 0.0.0.0 $::transparent__port]
+        set transparent_sslvsaddr [tmsh::run_proc f5.app_utils:create_destination 0.0.0.0 $::transparent__sslport]
+        set vs_transparent_http_name [create_wbsn_vs ${tmsh::app_name}_transparent_http \
+            $transparent_vsaddr $transparent_snat $pool_name_transparent_http $http_profile_names $persist_profile \
+            $tcp_server_profile_name $tcp_client_profile_name $tvs_vlan_action $::YES_ANSWER]
+        set vs_transparent_https_name [create_wbsn_vs ${tmsh::app_name}_transparent_https \
+            $transparent_sslvsaddr $transparent_snat $pool_name_transparent_https $https_profile_names $persist_profile \
+            $tcp_server_profile_name $tcp_client_profile_name $tvs_vlan_action $::YES_ANSWER]
+
+        if { ![info exists ::transparent__individual] } {
+            set ::transparent__individual $::NO_ANSWER
+        }
+
+        if { $::transparent__individual == $::YES_ANSWER } {
+            # Create node specific virtual servers to support transparent Kerberos
+	    #
+            # VLAN Enabled / Disabled
+            set ivs_vlan_enable_disable $::transparent__ivs_vlan_listening
+            if { $ivs_vlan_enable_disable != $::ALL_VLAN_ANSWER } {
+                if { $ivs_vlan_enable_disable == $::ENABLED_ON_ANSWER } {
+                    set ivs_vlan_action "vlans-enabled vlans "
+                } else {
+                    set ivs_vlan_action "vlans-disabled vlans "
+                }
+                if { [info exists ::transparent__ivs_vlan_selections] } {
+                    append ivs_vlan_action "replace-all-with \{"
+                    append ivs_vlan_action $::transparent__ivs_vlan_selections
+                    append ivs_vlan_action \}
+                } else {
+                    append ivs_vlan_action "none"
+                }
+            } else {
+                set ivs_vlan_action $::EMPTY_STRING
+            }
+	    
+            foreach row $servers {
+               array set columns [lindex $row 0]
+               set server $columns($::ADDR_FIELD)
+               set port $columns($::PORT_FIELD)
+               set member [tmsh::run_proc f5.app_utils:create_destination $server $port]
+               tmsh_create "/ ltm pool" "${tmsh::app_name}_${server}_$port \
+                   members replace-all-with \{ $member \{ \} \} \
+                   load-balancing-mode $lb_method \
+                   monitor $monitor_name" 
+
+              create_wbsn_vs ${tmsh::app_name}_${server}_$port \
+                  $member $transparent_snat ${tmsh::app_name}_${server}_$port \
+                  $http_profile_names $persist_profile \
+                  $tcp_server_profile_name $tcp_client_profile_name $ivs_vlan_action $::NO_ANSWER
+            }
+        }
+    }
+}
+
+puts " "
+puts " "
+puts "Starting HTTP template."
+puts " "
+
+set provisioned [tmsh::run_proc f5.app_utils:get_provisioned ltm]
+if { $provisioned == "provisioned" } {
+    if { [tmsh::run_proc f5.app_utils:is_safe_app_name "\"$tmsh::app_name\""] != true } {
+        puts "The app template name contained illegal characters."
+        error "The app template name contained illegal characters."
+    }
+    configure_websense_deployment
+} else {
+    puts "The app template failed because LTM is required."
+    error "The app template failed because LTM is required."
+}
+
+puts " "
+puts "Ending HTTP template."
+puts " "
+            }
+            presentation {
+                include "/Common/f5.apl_common"
+
+section intro {
+    message hello "Websense Web Security Gateway solutions"
+    optional ( hello == "NEVER_SHOW_THIS" ) {
+        choice ltm_provisioned tcl { tmsh::run_proc f5.app_utils:get_provisioned ltm }
+        choice is_viprion tcl { tmsh::run_proc f5.app_utils:get_is_viprion }
+    }
+
+    optional ( ltm_provisioned != "provisioned" ) {
+        message sorry "We are sorry but you must license and provision the LTM module to use this template."
+    }
+}
+optional ( intro.ltm_provisioned == "provisioned" ) {
+    section explicit {
+        yesno explicit
+        optional ( explicit == "Yes" ) {
+            string addr required validator "IpAddress"
+            string port default "8080" required validator "PortNumber" display "small"
+            string sslport default "8070" required validator "PortNumber" display "small"
+            string ftpport default "2121" required validator "PortNumber" display "small"
+            choice evs_vlan_listening default "All VLANs" display "xlarge" {
+                "All VLANs" => "All VLANs",
+                "Enabled on ..." => "Enabled on ...",
+                "Disabled on ..." => "Disabled on ..."
+            }
+            optional ( evs_vlan_listening != "All VLANs" ) {
+                multichoice evs_vlan_selections tcl {
+                    tmsh::run_proc f5.app_utils:get_vlans
+                }
+            }
+            yesno snat
+            optional ( snat == "Yes" ) {
+                    message snat_message1 "Please ensure that Websense Content Gateway has routes back to the clients via this BIG-IP system.  If your proxy is on a Websense appliance, configure these routes on the Configuration > Routing page of the Websense Appliance Manager."
+                }
+            optional ( snat == "No" ) {
+                message snat_message2 "You must enable 'Read authentication from child proxy' in the Websense Content Gateway Configure pane (Configure > My Proxy > Basic > Authentication)."
+                noyes need_snatpool
+                optional ( need_snatpool == "Yes" ) {
+                    table snatpool_members {
+                        string addr required validator "IpAddress"
+                    }
+                }
+            }
+            noyes kerberos
+            optional ( kerberos == "Yes" ) {
+                    message kerberos_message "Websense Content Gateway must be specially configured to support this configuration.  Please contact Websense Support for assistance."
+                }
+        }
+    }
+
+    section transparent {
+        noyes transparent
+        optional ( transparent == "Yes" ) {
+            string port default "80" required validator "PortNumber" display "small"
+            string sslport default "443" required validator "PortNumber" display "small"
+            yesno snat
+            optional ( snat == "Yes" ) {
+                    message snat_message1 "Please ensure that Websense Content Gateway has routes back to the clients via this BIG-IP system.  If your proxy is on a Websense appliance, configure these routes on the Configuration > Routing page of the Websense Appliance Manager."
+                }
+            optional ( snat == "No" ) {
+                message snat_message2 "You must enable 'Read authentication from child proxy' in the Websense Content Gateway Configure pane (Configure > My Proxy > Basic > Authentication)."
+                noyes need_snatpool
+                optional ( need_snatpool == "Yes" ) {
+                    table snatpool_members {
+                        string addr required validator "IpAddress"
+                    }
+                }
+            }
+            optional ( explicit.kerberos == "No" ) {
+                noyes kerberos
+                optional ( kerberos == "Yes" ) {
+                        noyes individual
+			optional ( individual == "Yes" ) {
+                            choice ivs_vlan_listening default "All VLANs" display "xlarge" {
+                                "All VLANs" => "All VLANs",
+                                "Enabled on ..." => "Enabled on ...",
+                                "Disabled on ..." => "Disabled on ..."
+                            }
+                            optional ( ivs_vlan_listening != "All VLANs" ) {
+                                multichoice ivs_vlan_selections tcl {
+                                    tmsh::run_proc f5.app_utils:get_vlans
+                                }
+                            }
+			}
+                }
+            }
+            optional ( explicit.kerberos == "Yes" ) {
+                    message kerberos_message "Kerberos information:  You configured Kerberos in explicit mode.  You cannot configure it in explicit and transparent mode at the same time."
+            }
+            choice tvs_vlan_listening default "All VLANs" display "xlarge" {
+                "All VLANs" => "All VLANs",
+                "Enabled on ..." => "Enabled on ...",
+                "Disabled on ..." => "Disabled on ..."
+            }
+            optional ( tvs_vlan_listening != "All VLANs" ) {
+                multichoice tvs_vlan_selections tcl {
+                    tmsh::run_proc f5.app_utils:get_vlans
+                }
+            }
+        }
+    }
+
+    section server_pools {
+            choice lb_method_choice default "predictive-node" display "xlarge" {
+                "Dynamic Ratio (member)" => "dynamic-ratio-member",
+                "Dynamic Ratio (node)" => "dynamic-ratio-node",
+                "Fastest (application)" => "fastest-app-response",
+                "Fastest (node)" => "fastest-node",
+                "Least Connections (member)" => "least-connections-member",
+                "Least Connections (node)" => "least-connections-node",
+                "Least Sessions" => "least-sessions",
+                "Observed (member)" => "observed-member",
+                "Observed (node)" => "observed-node",
+                "Predictive (member)" => "predictive-member",
+                "Predictive (node)" => "predictive-node",
+                "Round Robin" => "round-robin",
+                "Ratio (member)" => "ratio-member",
+                "Ratio (node)" => "ratio-node",
+                "Ratio (session)" => "ratio-session",        
+                "Ratio Least Connections (member)" => "ratio-least-connections-memeber",
+                "Ratio Least Connections (node)" => "ratio-least-connections-node",
+                "Weighted Least Connections (member)" => "weighted-least-connections-member",
+                "Weighted Least Connections (node)" => "weighted-least-connections-node"
+            }
+
+            table servers {
+                string addr required validator "IpAddress"
+                string port default "8080" required validator "PortNumber" display "small"
+                string sslport default "8070" required validator "PortNumber" display "small"
+                string ftpport default "2121" required validator "PortNumber" display "small"
+                string connection_limit default "0" required validator "NonNegativeNumber" display "small"
+                optional ( lb_method_choice == "ratio-member" ||
+                        lb_method_choice == "ratio-node" ||
+                        lb_method_choice == "ratio-session" ||
+                        lb_method_choice == "ratio-least-connections-memeber" ||
+                        lb_method_choice == "ratio-least-connections-node" ||
+                        lb_method_choice == "dynamic-ratio-member" ||
+                        lb_method_choice == "dynamic-ratio-node" ) {
+                    string ratio default "1" validator "NonNegativeNumber" display "small"
+                }
+            }
+
+            noyes tcp_request_queuing_enable_question
+            optional ( tcp_request_queuing_enable_question == "Yes" ) {
+                message note "TCP request queuing requires you to have a Connection Limit on your pool members."
+                string tcp_request_queue_length default "0" required validator "NonNegativeNumber" display "small"
+                string tcp_request_queue_timeout default "0" required validator "NonNegativeNumber" display "small"
+            }
+
+            choice create_new_monitor display "xlarge" {
+                "Websense 7.7.3+",
+                "Websense 7.7",
+                "Create Cusom Monitor",
+                "Use Monitor..."
+            }
+            optional ( create_new_monitor == "Websense 7.7" || create_new_monitor == "Websense 7.7.3+" || create_new_monitor == "Create Custom Monitor" ) {
+                string monitor_interval default "30" required validator "NonNegativeNumber" display "small"
+            }
+            optional ( create_new_monitor == "Create Custom Monitor" ) {
+                string monitor_send default "GET /" required display "xlarge"
+
+                choice monitor_http_version {
+                    "Version 1.0",
+                    "Version 1.1"
+                }
+                optional ( monitor_http_version == "Version 1.1" ) {
+                    string monitor_dns_name required validator "FQDN" display "large"
+                }
+
+                string monitor_recv display "xlarge"
+            }
+            optional ( create_new_monitor == "Use Monitor..." ) {
+                choice reuse_monitor_name display "xlarge" tcl {
+                    tmsh::run_proc f5.app_utils:get_ltm_monitors_filter http https
+                }
+            }
+    }
+    section optimizations {
+        choice lan_or_wan { "LAN", "WAN" }
+    }
+}
+text
+{
+    intro "Welcome to the Websense Content Gateway Assistant"
+    intro.hello "This template supports:"
+    intro.sorry "We're sorry:"
+
+    explicit "Explicit Proxy Options"
+    explicit.explicit "Do you want to configure a virtual explicit proxy?"
+    explicit.addr "What IP address do you want to use for it?"
+    explicit.port "What port do you want to use for HTTP connections?"
+    explicit.sslport "What port do you want to use for HTTPS connections?"
+    explicit.ftpport "What port do you want to use for FTP connections?"
+    explicit.evs_vlan_listening "What VLANs should the explicit proxy virtual server be available on?"
+    explicit.evs_vlan_selections "On which VLAN(s) should the explicit proxy virtual server be available?"
+    explicit.snat "Do the HTTP servers have a route back to clients via this BIG-IP system?"
+    explicit.snat_message1 "Websense Content Gateway configuration"
+    explicit.snat_message2 "Websense Content Gateway configuration"
+    explicit.need_snatpool "Will you have more than 64,000 connections at one time? If so, you will need to enter at least one IP address for each 64,000 connections. "
+    explicit.snatpool_members "Enter IP addresses that can be used for a SNAT pool. Enter one IP address for each 64,000 connections "
+    explicit.snatpool_members.addr "Address: "
+    explicit.kerberos "Are you using Kerberos authentication?"
+    explicit.kerberos_message "Kerberos information"
+
+    transparent "Transparent Proxy Options"
+    transparent.transparent "Do you want to deploy Content Gateway as a transparent proxy?"
+    transparent.port "What port do you want to use for HTTP connections?"
+    transparent.sslport "What port do you want to use for HTTPS connections?"
+    transparent.snat "Do the HTTP servers have a route back to clients via this BIG-IP system?"
+    transparent.snat_message1 "Websense Content Gateway configuration"
+    transparent.snat_message2 "Websense Content Gateway configuration"
+    transparent.need_snatpool "Will you have more than 64,000 connections at one time? If so, you will need to enter at least one IP address for each 64,000 connections. "
+    transparent.snatpool_members "Enter IP addresses that can be used for a SNAT pool. Enter one IP address for each 64,000 connections "
+    transparent.snatpool_members.addr "Address: "
+    transparent.kerberos "Are you using Kerberos authentication?"
+    transparent.individual "Clients must be able to connect to a specific proxy by name to complete Kerberos authentication.  Do you need virtual servers configured for this?"
+    transparent.ivs_vlan_listening "What VLANs should the specific proxy virtual server be available on?"
+    transparent.ivs_vlan_selections "On which VLAN(s) should the specific proxy virtual server be available?"
+    transparent.kerberos_message "Kerberos information"
+
+    transparent.tvs_vlan_listening "What VLANs should the transparent proxy intercept traffic?"
+    transparent.tvs_vlan_selections "On which VLAN(s) should the transparent proxy intercept traffic?"
+
+    server_pools "Websense Server Pool, Load Balancing, and Service Monitor"
+    server_pools.lb_method_choice "Which load balancing method do you want to use?"
+    server_pools.servers "What are the IP addresses of the Websense Content Gateway machines?"
+    server_pools.servers.addr "Address"
+    server_pools.servers.port "HTTP Port"
+    server_pools.servers.sslport "HTTPS Port"
+    server_pools.servers.ftpport "FTP Port"
+    server_pools.servers.ratio "Ratio"
+    server_pools.servers.connection_limit "Connection Limit"
+    server_pools.tcp_request_queuing_enable_question "Do you want the BIG-IP to queue TCP requests?"
+    server_pools.note "Note:"
+    server_pools.tcp_request_queue_length "Specify the TCP request queue length. Choose 0 for unlimited."
+    server_pools.tcp_request_queue_timeout "Specify a timeout for TCP request queuing in milliseconds. Choose 0 for unlimited."
+
+    server_pools.create_new_monitor "Do you want to create a new health monitor or use an existing one?"
+    server_pools.monitor_interval "How often (in seconds) do you want the BIG-IP system to check on the health of each HTTP server? "
+    server_pools.monitor_send "What HTTP request should be sent to check the health of each HTTP server?"
+    server_pools.monitor_http_version "What HTTP version do your HTTP servers expect clients to use?"
+    server_pools.monitor_dns_name "What fully qualified DNS name are HTTP 1.1 clients expected to use to access the HTTP servers?"
+    server_pools.monitor_recv "What string can the BIG-IP system expect to see within the health check response for the server to be considered healthy?"
+    server_pools.reuse_monitor_name "Choose a monitor from the list of available monitors."
+
+    optimizations "Protocol Optimization"
+    optimizations.lan_or_wan "Will clients be connecting to this virtual server primarily over a LAN or a WAN?"
+}
+            }
+            role-acl { admin manager resource-admin }
+            run-as none
+        }
+    }
+    description none
+    requires-bigip-version-max none
+    requires-bigip-version-min none
+    requires-modules none
+}
